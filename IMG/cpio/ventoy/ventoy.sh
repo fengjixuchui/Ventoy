@@ -184,6 +184,10 @@ ventoy_get_os_type() {
         fi
     fi
     
+    if $GREP -q 'android.x86' /proc/version; then
+        echo 'android'; return
+    fi 
+    
     echo "default"
 }
 
@@ -220,6 +224,11 @@ fi
 $BUSYBOX_PATH/umount /proc
 if [ "$rmproc" = "Y" ]; then
     $BUSYBOX_PATH/rm -rf /proc
+fi
+
+if [ -f $VTOY_PATH/ventoy_persistent_map ]; then
+    export PERSISTENT='YES'
+    export PERSISTENCE='true'
 fi
 
 cd /
