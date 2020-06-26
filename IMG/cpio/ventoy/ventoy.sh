@@ -87,6 +87,10 @@ ventoy_get_os_type() {
     elif $EGREP -q 'archlinux|ARCH' /proc/version; then
         echo 'arch'; return
     
+    # kiosk
+    elif $EGREP -q 'kiosk' /proc/version; then
+        echo 'kiosk'; return
+    
     # gentoo
     elif $EGREP -q '[Gg]entoo' /proc/version; then
         echo 'gentoo'; return
@@ -188,6 +192,10 @@ ventoy_get_os_type() {
         echo 'android'; return
     fi 
     
+    if $GREP -q 'adelielinux' /proc/version; then
+        echo 'adelie'; return
+    fi
+    
     echo "default"
 }
 
@@ -214,8 +222,6 @@ if [ "$VTOY_BREAK_LEVEL" = "03" ] || [ "$VTOY_BREAK_LEVEL" = "13" ]; then
     exec $BUSYBOX_PATH/sh
 fi
 
-
-
 ####################################################################
 #                                                                  #
 # Step 4 : Hand over to real init                                  #
@@ -232,7 +238,8 @@ if [ -f $VTOY_PATH/ventoy_persistent_map ]; then
 fi
 
 cd /
-unset VTOY_PATH VTLOG FIND GREP EGREP CAT AWK SED SLEEP HEAD
+
+unset VTLOG FIND GREP EGREP CAT AWK SED SLEEP HEAD
 
 for vtinit in $user_rdinit /init /sbin/init /linuxrc; do
     if [ -d /ventoy_rdroot ]; then
@@ -243,6 +250,9 @@ for vtinit in $user_rdinit /init /sbin/init /linuxrc; do
         fi
     else
         if [ -e "$vtinit" ];then
+            if [ -f "$VTOY_PATH/hook/$VTOS/ventoy-before-init.sh" ]; then
+                $BUSYBOX_PATH/sh "$VTOY_PATH/hook/$VTOS/ventoy-before-init.sh"
+            fi
             exec "$vtinit"
         fi
     fi

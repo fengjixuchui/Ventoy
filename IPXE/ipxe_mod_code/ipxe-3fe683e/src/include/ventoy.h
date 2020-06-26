@@ -80,6 +80,14 @@ typedef struct ventoy_os_param
     grub_uint8_t   reserved[31];
 }ventoy_os_param;
 
+typedef struct ventoy_iso9660_override
+{
+    uint32_t first_sector;
+    uint32_t first_sector_be;
+    uint32_t size;
+    uint32_t size_be;
+}ventoy_iso9660_override;
+
 #pragma pack()
 
 // compile assert to check that size of ventoy_os_param must be 512
@@ -162,6 +170,7 @@ typedef struct ventoy_sector_flag
 }ventoy_sector_flag;
 
 #define VENTOY_BIOS_FAKE_DRIVE  0xFE
+#define VENTOY_BOOT_FIXBIN_DRIVE  0xFD
 
 extern int g_debug;
 extern char *g_cmdline_copy;
