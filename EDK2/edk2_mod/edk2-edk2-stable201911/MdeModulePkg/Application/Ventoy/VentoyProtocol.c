@@ -36,6 +36,7 @@
 #include <Protocol/SimpleFileSystem.h>
 #include <Ventoy.h>
 
+UINT8 *g_iso_data_buf = NULL;
 UINTN g_iso_buf_size = 0;
 BOOLEAN gMemdiskMode = FALSE;
 
@@ -254,7 +255,7 @@ EFI_STATUS EFIAPI ventoy_block_io_ramdisk_read
     (VOID)This;
     (VOID)MediaId;
 
-    CopyMem(Buffer, (char *)g_chain + (Lba * 2048), BufferSize);
+    CopyMem(Buffer, g_iso_data_buf + (Lba * 2048), BufferSize);
     
     if (g_blockio_start_record_bcd && FALSE == g_blockio_bcd_read_done)
     {
@@ -699,8 +700,16 @@ STATIC EFI_STATUS EFIAPI
 ventoy_wrapper_file_set_pos(EFI_FILE_HANDLE This, UINT64 Position)
 {
     (VOID)This;
+        
+    if (Position <= g_efi_file_replace.FileSizeBytes)
+    {
+        g_efi_file_replace.CurPos = Position;
+    }
+    else
+    {
+        g_efi_file_replace.CurPos = g_efi_file_replace.FileSizeBytes;
+    }
     
-    g_efi_file_replace.CurPos = Position;
     return EFI_SUCCESS;
 }
 
@@ -815,6 +824,8 @@ STATIC EFI_STATUS EFIAPI ventoy_wrapper_file_open
     CHAR8 TmpName[256];
     ventoy_virt_chunk *virt = NULL;
 
+    debug("## ventoy_wrapper_file_open <%s> ", Name);
+
     Status = g_original_fopen(This, New, Name, Mode, Attributes);
     if (EFI_ERROR(Status))
     {
@@ -849,6 +860,11 @@ STATIC EFI_STATUS EFIAPI ventoy_wrapper_file_open
                 
                 return Status;
             }
+        }
+
+        if (StrCmp(Name, L"\\EFI\\BOOT") == 0)
+        {
+            (*New)->Open = ventoy_wrapper_file_open;
         }
     }
 

@@ -37,6 +37,7 @@
 #include <Ventoy.h>
 
 BOOLEAN gDebugPrint = FALSE;
+BOOLEAN gLoadIsoEfi = FALSE;
 ventoy_ram_disk g_ramdisk_param;
 ventoy_chain_head *g_chain;
 ventoy_img_chunk *g_chunk;
@@ -51,6 +52,8 @@ static grub_env_get_pf grub_env_get = NULL;
 
 ventoy_grub_param_file_replace *g_file_replace_list = NULL;
 ventoy_efi_file_replace g_efi_file_replace;
+
+CONST CHAR16 gIso9660EfiDriverPath[] = ISO9660_EFI_DRIVER_PATH;
 
 BOOLEAN g_fix_windows_1st_cdrom_issue = FALSE;
 
@@ -328,7 +331,7 @@ EFI_STATUS EFIAPI ventoy_save_ramdisk_param(VOID)
     Status = gRT->SetVariable(L"VentoyRamDisk", &VarGuid, 
                   EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
                   sizeof(g_ramdisk_param), &(g_ramdisk_param));
-    debug("set efi variable %r", Status);
+    debug("set ramdisk variable %r", Status);
 
     return Status;
 }
@@ -484,6 +487,93 @@ STATIC EFI_STATUS EFIAPI ventoy_find_iso_disk(IN EFI_HANDLE ImageHandle)
     }
 }
 
+
+STATIC EFI_STATUS EFIAPI ventoy_find_iso_disk_fs(IN EFI_HANDLE ImageHandle)
+{
+    UINTN i = 0;
+    UINTN Count = 0;
+    EFI_HANDLE Parent = NULL;
+    EFI_HANDLE *Handles = NULL;
+    EFI_STATUS Status = EFI_SUCCESS;
+    EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *pFile = NULL;
+    EFI_DEVICE_PATH_PROTOCOL *pDevPath = NULL;
+
+    Status = gBS->LocateHandleBuffer(ByProtocol, &gEfiSimpleFileSystemProtocolGuid, 
+                                     NULL, &Count, &Handles);
+    if (EFI_ERROR(Status))
+    {
+        return Status;
+    }
+
+    debug("ventoy_find_iso_disk_fs fs count:%u", Count);
+
+    for (i = 0; i < Count; i++)
+    {
+        Status = gBS->HandleProtocol(Handles[i], &gEfiSimpleFileSystemProtocolGuid, (VOID **)&pFile);
+        if (EFI_ERROR(Status))
+        {
+            continue;
+        }
+
+        Status = gBS->OpenProtocol(Handles[i], &gEfiDevicePathProtocolGuid, 
+                                   (VOID **)&pDevPath,
+                                   ImageHandle,
+                                   Handles[i],
+                                   EFI_OPEN_PROTOCOL_GET_PROTOCOL);
+        if (EFI_ERROR(Status))
+        {
+            debug("Failed to open device path protocol %r", Status);
+            continue;
+        }
+
+        debug("Handle:%p FS DP: <%s>", Handles[i], ConvertDevicePathToText(pDevPath, FALSE, FALSE));
+        Parent = ventoy_get_parent_handle(pDevPath);
+
+        if (Parent == gBlockData.RawBlockIoHandle)
+        {
+            debug("Find ventoy disk fs");
+            gBlockData.DiskFsHandle = Handles[i];
+            gBlockData.pDiskFs = pFile;
+            gBlockData.pDiskFsDevPath = pDevPath;
+            break;
+        }
+    }
+
+    FreePool(Handles);
+
+    return EFI_SUCCESS;
+}
+
+STATIC EFI_STATUS EFIAPI ventoy_load_isoefi_driver(IN EFI_HANDLE ImageHandle)
+{
+    EFI_HANDLE Image = NULL;
+    EFI_STATUS Status = EFI_SUCCESS;
+    CHAR16 LogVar[4] = L"5";
+            
+    Status = ventoy_load_image(ImageHandle, gBlockData.pDiskFsDevPath, 
+                               gIso9660EfiDriverPath, 
+                               sizeof(gIso9660EfiDriverPath), 
+                               &Image);
+    debug("load iso efi driver status:%r", Status);
+
+    if (gDebugPrint)
+    {
+        gRT->SetVariable(L"FS_LOGGING", &gShellVariableGuid, 
+                         EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
+                         sizeof(LogVar), LogVar);
+    }
+
+    gRT->SetVariable(L"FS_NAME_NOCASE", &gShellVariableGuid, 
+                     EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
+                     sizeof(LogVar), LogVar);
+
+    gBlockData.IsoDriverImage = Image;
+    Status = gBS->StartImage(Image, NULL, NULL);
+    debug("Start iso efi driver status:%r", Status);
+
+    return EFI_SUCCESS;
+}
+
 STATIC EFI_STATUS EFIAPI ventoy_parse_cmdline(IN EFI_HANDLE ImageHandle)
 {   
     UINT32 i = 0;
@@ -511,6 +601,11 @@ STATIC EFI_STATUS EFIAPI ventoy_parse_cmdline(IN EFI_HANDLE ImageHandle)
     if (StrStr(pCmdLine, L"debug"))
     {
         gDebugPrint = TRUE;
+    }
+
+    if (StrStr(pCmdLine, L"isoefi=on"))
+    {
+        gLoadIsoEfi = TRUE;
     }
 
     pPos = StrStr(pCmdLine, L"FirstTry=@");
@@ -568,17 +663,22 @@ STATIC EFI_STATUS EFIAPI ventoy_parse_cmdline(IN EFI_HANDLE ImageHandle)
     size = StrDecimalToUintn(pPos + 5);
 
     debug("memory addr:%p size:%lu", chain, size);
-    
-    g_chain = AllocatePool(size);
-    CopyMem(g_chain, chain, size);
 
     if (StrStr(pCmdLine, L"memdisk"))
     {
-        g_iso_buf_size = size;
+        g_iso_data_buf = (UINT8 *)chain + sizeof(ventoy_chain_head);
+        g_iso_buf_size = size - sizeof(ventoy_chain_head);
+        debug("memdisk mode iso_buf_size:%u", g_iso_buf_size);
+
+        g_chain = chain;
         gMemdiskMode = TRUE;
     }
     else
     {
+        debug("This is normal mode");
+        g_chain = AllocatePool(size);
+        CopyMem(g_chain, chain, size);
+    
         g_chunk = (ventoy_img_chunk *)((char *)g_chain + g_chain->img_chunk_offset);
         g_img_chunk_num = g_chain->img_chunk_num;
         g_override_chunk = (ventoy_override_chunk *)((char *)g_chain + g_chain->override_chunk_offset);
@@ -630,6 +730,8 @@ STATIC EFI_STATUS EFIAPI ventoy_parse_cmdline(IN EFI_HANDLE ImageHandle)
         }
     }
 
+    ventoy_debug_pause();
+
     FreePool(pCmdLine);
     return EFI_SUCCESS;
 }
@@ -638,6 +740,11 @@ EFI_STATUS EFIAPI ventoy_clean_env(VOID)
 {
     FreePool(g_sector_flag);
     g_sector_flag_num = 0;
+
+    if (gLoadIsoEfi && gBlockData.IsoDriverImage)
+    {
+        gBS->UnloadImage(gBlockData.IsoDriverImage);
+    }
 
     gBS->DisconnectController(gBlockData.Handle, NULL, NULL);
 
@@ -842,20 +949,40 @@ EFI_STATUS EFIAPI VentoyEfiMain
 
     if (gMemdiskMode)
     {
-        g_ramdisk_param.PhyAddr = (UINT64)(UINTN)g_chain;
+        g_ramdisk_param.PhyAddr = (UINT64)(UINTN)g_iso_data_buf;
         g_ramdisk_param.DiskSize = (UINT64)g_iso_buf_size;
 
         ventoy_save_ramdisk_param();
+
+        if (gLoadIsoEfi)
+        {
+            ventoy_find_iso_disk(ImageHandle);
+            ventoy_find_iso_disk_fs(ImageHandle);
+            ventoy_load_isoefi_driver(ImageHandle);
+        }
         
         ventoy_install_blockio(ImageHandle, g_iso_buf_size);
+        ventoy_debug_pause();
+
         Status = ventoy_boot(ImageHandle);
         
         ventoy_delete_ramdisk_param();
+
+        if (gLoadIsoEfi && gBlockData.IsoDriverImage)
+        {
+            gBS->UnloadImage(gBlockData.IsoDriverImage);
+        }
     }
     else
     {
         ventoy_save_variable();
         ventoy_find_iso_disk(ImageHandle);
+
+        if (gLoadIsoEfi)
+        {
+            ventoy_find_iso_disk_fs(ImageHandle);
+            ventoy_load_isoefi_driver(ImageHandle);
+        }
 
         ventoy_debug_pause();
         

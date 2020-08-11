@@ -144,7 +144,7 @@ if [ "$MODE" = "install" ]; then
     disk_sector_num=$(cat /sys/block/${DISK#/dev/}/size)
     disk_size_gb=$(expr $disk_sector_num / 2097152)
 
-    if [ $disk_sector_num -gt 4294967296 ]; then
+    if [ $disk_sector_num -gt 4294967296 ] && [ -z $VTGPT ]; then
         vterr "$DISK is over 2TB size, MBR will not work on it."
         exit 1
     fi
@@ -222,7 +222,9 @@ if [ "$MODE" = "install" ]; then
         cmd=./tool/mkexfatfs_32
     fi
 
-    chmod +x ./tool/*
+    if [ -d ./tool/ ]; then 
+        chmod +x -R ./tool/
+    fi
 
     # DiskSize > 32GB  Cluster Size use 128KB
     # DiskSize < 32GB  Cluster Size use 32KB
@@ -233,8 +235,6 @@ if [ "$MODE" = "install" ]; then
     fi
 
     $cmd -n ventoy -s $cluster_sectors ${DISK}1
-
-    chmod +x ./tool/vtoy_gen_uuid
 
     vtinfo "writing data to disk ..."
     
