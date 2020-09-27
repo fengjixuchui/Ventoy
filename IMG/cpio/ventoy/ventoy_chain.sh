@@ -301,6 +301,10 @@ ventoy_get_os_type() {
         echo 'pisilinux'; return
     fi
     
+    if $GREP -q 'blackPanther' /proc/version; then
+        echo 'blackPanther'; return
+    fi
+    
     echo "default"
 }
 
@@ -345,7 +349,7 @@ fi
 
 cd /
 
-unset VTLOG FIND GREP EGREP CAT AWK SED SLEEP HEAD
+unset VTLOG FIND GREP EGREP CAT AWK SED SLEEP HEAD vtcmdline
 
 for vtinit in $user_rdinit /init /sbin/init /linuxrc; do
     if [ -d /ventoy_rdroot ]; then
