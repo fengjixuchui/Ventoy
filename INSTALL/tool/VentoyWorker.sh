@@ -14,10 +14,12 @@ print_usage() {
     echo '   -r SIZE_MB  preserve some space at the bottom of the disk (only for install)'
     echo '   -s          enable secure boot support (default is disabled)'
     echo '   -g          use GPT partition style, default is MBR (only for install)'
+    echo '   -L          Label of the 1st exfat partition (default is ventoy)'
     echo ''
 }
 
 
+VTNEW_LABEL='ventoy'
 RESERVE_SIZE_MB=0
 while [ -n "$1" ]; do
     if [ "$1" = "-i" ]; then
@@ -31,6 +33,9 @@ while [ -n "$1" ]; do
         SECUREBOOT="YES"
     elif [ "$1" = "-g" ]; then
         VTGPT="YES"
+    elif [ "$1" = "-L" ]; then
+        shift
+        VTNEW_LABEL=$1
     elif [ "$1" = "-r" ]; then
         RESERVE_SPACE="YES"
         shift
@@ -63,7 +68,11 @@ if ! [ -b "$DISK" ]; then
 fi
 
 if [ -e /sys/class/block/${DISK#/dev/}/start ]; then
-    vterr "$DISK is a partition, please use the whole disk"
+    vterr  "$DISK is a partition, please use the whole disk."
+    echo   "For example:"
+    vterr  "    sudo sh Ventoy2Disk.sh -i /dev/sdX1 <=== This is wrong"
+    vtinfo "    sudo sh Ventoy2Disk.sh -i /dev/sdX  <=== This is right"
+    echo ""
     exit 1
 fi
 
@@ -244,7 +253,7 @@ if [ "$MODE" = "install" ]; then
     PART1=$(get_disk_part_name $DISK 1)  
     PART2=$(get_disk_part_name $DISK 2)  
 
-    $cmd -n ventoy -s $cluster_sectors ${PART1}
+    $cmd -n "$VTNEW_LABEL" -s $cluster_sectors ${PART1}
 
     vtinfo "writing data to disk ..."
     

@@ -96,6 +96,12 @@ char *g_wimiso_path = NULL;
 
 int g_vhdboot_enable = 0;
 
+grub_uint64_t g_conf_replace_offset = 0;
+conf_replace *g_conf_replace_node = NULL;
+grub_uint8_t *g_conf_replace_new_buf = NULL;
+int g_conf_replace_new_len = 0;
+int g_conf_replace_new_len_align = 0;
+
 ventoy_gpt_info *g_ventoy_part_info = NULL;
 
 static char *g_tree_script_buf = NULL;
@@ -1633,15 +1639,14 @@ int ventoy_check_device_result(int ret)
     grub_env_set("VTOY_CHKDEV_RESULT_STRING", buf);
     grub_env_export("VTOY_CHKDEV_RESULT_STRING");
 
-    if (ret & 0x1000)
+    if (ret)
     {
         grub_printf(VTOY_WARNING"\n");
         grub_printf(VTOY_WARNING"\n");
         grub_printf(VTOY_WARNING"\n\n\n");
         
-        grub_printf("Unsatisfied conditions detected for Ventoy.\n\n");
-        grub_printf("This is NOT a standard Ventoy device and is NOT officially supported.\n\n");
-        grub_printf("Recommend to follow the instructions in https://www.ventoy.net to use Ventoy.\n");
+        grub_printf("This is NOT a standard Ventoy device and is NOT supported.\n\n");
+        grub_printf("You should follow the instructions in https://www.ventoy.net to use Ventoy.\n");
         
         grub_printf("\n\nWill exit after 10 seconds ...... ");
         grub_refresh();
@@ -1783,8 +1788,6 @@ static int ventoy_set_default_menu(void)
             {
                 pos = def + 1;
             }
-
-            pos = def + 1;
 
             while ((end = grub_strchr(pos, '/')) != NULL)
             {
@@ -2364,6 +2367,9 @@ static grub_err_t ventoy_cmd_img_sector(grub_extcmd_context_t ctxt, int argc, ch
         return grub_error(GRUB_ERR_BAD_ARGUMENT, "Can't open file %s\n", args[0]); 
     }
 
+    g_conf_replace_node = NULL;
+    g_conf_replace_offset = 0;
+    
     if (g_img_chunk_list.chunk)
     {
         grub_free(g_img_chunk_list.chunk);
@@ -2399,6 +2405,75 @@ static grub_err_t ventoy_cmd_img_sector(grub_extcmd_context_t ctxt, int argc, ch
     }
 
     grub_memset(&g_grub_param->file_replace, 0, sizeof(g_grub_param->file_replace));
+    VENTOY_CMD_RETURN(GRUB_ERR_NONE);
+}
+
+static grub_err_t ventoy_select_conf_replace(grub_extcmd_context_t ctxt, int argc, char **args)
+{
+    grub_uint64_t offset = 0;
+    grub_uint32_t align = 0;
+    grub_file_t file = NULL;
+    conf_replace *node = NULL;
+        
+    (void)ctxt;
+    (void)argc;
+    (void)args;
+
+    debug("select conf replace argc:%d\n", argc);
+
+    if (argc < 2)
+    {
+        return 0;
+    }
+
+    node = ventoy_plugin_find_conf_replace(args[1]);
+    if (!node)
+    {
+        debug("Conf replace not found for %s\n", args[1]);
+        goto end;
+    }
+
+    debug("Find conf replace for %s\n", args[1]);
+
+    file = ventoy_grub_file_open(VENTOY_FILE_TYPE, "(loop)%s", node->orgconf);
+    if (!file)
+    {
+        debug("<(loop)%s> NOT exist\n", node->orgconf);
+        goto end;
+    }
+
+    offset = grub_iso9660_get_last_file_dirent_pos(file);
+    grub_file_close(file);    
+
+    file = ventoy_grub_file_open(VENTOY_FILE_TYPE, "%s%s", args[0], node->newconf);
+    if (!file)
+    {
+        debug("New config file <%s%s> NOT exist\n", args[0], node->newconf);
+        goto end;
+    }
+
+    align = ((int)file->size + 2047) / 2048 * 2048;
+
+    if (align > vtoy_max_replace_file_size)
+    {
+        debug("New config file <%s%s> too big\n", args[0], node->newconf);
+        goto end;
+    }
+
+    grub_file_read(file, g_conf_replace_new_buf, file->size);
+    g_conf_replace_new_len = (int)file->size;
+    g_conf_replace_new_len_align = align;
+
+    g_conf_replace_node = node;
+    g_conf_replace_offset = offset + 2;
+
+    debug("conf_replace OK: newlen: %d\n", g_conf_replace_new_len);
+
+end:
+    if (file)
+    {
+        grub_file_close(file);        
+    }
     VENTOY_CMD_RETURN(GRUB_ERR_NONE);
 }
 
@@ -3446,7 +3521,7 @@ static grub_err_t ventoy_cmd_load_part_table(grub_extcmd_context_t ctxt, int arg
         ret = ventoy_check_device(dev);
         grub_device_close(dev);
 
-        if (ret & 0x1000)
+        if (ret)
         {
             grub_exit();            
         }
@@ -3831,6 +3906,7 @@ static int ventoy_env_init(void)
     g_part_list_buf = grub_malloc(VTOY_PART_BUF_LEN);
     g_tree_script_buf = grub_malloc(VTOY_MAX_SCRIPT_BUF);
     g_list_script_buf = grub_malloc(VTOY_MAX_SCRIPT_BUF);
+    g_conf_replace_new_buf = grub_malloc(vtoy_max_replace_file_size); 
 
     ventoy_filt_register(0, ventoy_wrapper_open);
 
@@ -3899,6 +3975,7 @@ static cmd_para ventoy_cmds[] =
     { "vt_dump_persistence", ventoy_cmd_dump_persistence, 0, NULL, "", "", NULL },
     { "vt_select_auto_install", ventoy_cmd_sel_auto_install, 0, NULL, "", "", NULL },
     { "vt_select_persistence", ventoy_cmd_sel_persistence, 0, NULL, "", "", NULL },
+    { "vt_select_conf_replace", ventoy_select_conf_replace, 0, NULL, "", "", NULL },
 
     { "vt_iso9660_nojoliet", ventoy_cmd_iso9660_nojoliet, 0, NULL, "", "", NULL },
     { "vt_is_udf", ventoy_cmd_is_udf, 0, NULL, "", "", NULL },
@@ -3963,7 +4040,7 @@ GRUB_MOD_INIT(ventoy)
     cmd_para *cur = NULL;
 
     ventoy_env_init();
-    
+
     for (i = 0; i < ARRAY_SIZE(ventoy_cmds); i++)
     {
         cur = ventoy_cmds + i;
