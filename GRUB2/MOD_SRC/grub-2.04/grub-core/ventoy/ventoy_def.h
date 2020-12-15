@@ -52,11 +52,19 @@
 
 #define VTOY_WARNING  "!!!!!!!!!!!!! WARNING !!!!!!!!!!!!!"
 
-#ifdef GRUB_MACHINE_EFI
-#define VTOY_DUAL_MODE_SUFFIX "uefi"
-#else
-#define VTOY_DUAL_MODE_SUFFIX "legacy"
-#endif
+#define VTOY_PLAT_I386_UEFI     0x49413332
+#define VTOY_PLAT_ARM64_UEFI    0x41413634
+#define VTOY_PLAT_X86_64_UEFI   0x55454649
+#define VTOY_PLAT_X86_LEGACY    0x42494f53
+
+#define VTOY_PWD_CORRUPTED(err) \
+{\
+    grub_printf("\n\n Password corrupted, will reboot after 5 seconds.\n\n"); \
+    grub_refresh(); \
+    grub_sleep(5); \
+    grub_exit(); \
+    return (err);\
+}
 
 typedef struct ventoy_initrd_ctx
 {
@@ -245,6 +253,7 @@ extern ventoy_guid  g_ventoy_guid;
 extern ventoy_img_chunk_list g_img_chunk_list;
 extern ventoy_img_chunk_list g_wimiso_chunk_list;
 extern char *g_wimiso_path;
+extern char g_arch_mode_suffix[64];
 
 extern int g_ventoy_debug;
 void ventoy_debug(const char *fmt, ...);
@@ -496,6 +505,7 @@ grub_err_t ventoy_cmd_linux_locate_initrd(grub_extcmd_context_t ctxt, int argc, 
 grub_err_t ventoy_cmd_initrd_count(grub_extcmd_context_t ctxt, int argc, char **args);
 grub_err_t ventoy_cmd_valid_initrd_count(grub_extcmd_context_t ctxt, int argc, char **args);
 grub_err_t ventoy_cmd_load_cpio(grub_extcmd_context_t ctxt, int argc, char **args);
+grub_err_t ventoy_cmd_skip_svd(grub_extcmd_context_t ctxt, int argc, char **args);
 grub_err_t ventoy_cmd_cpio_busybox_64(grub_extcmd_context_t ctxt, int argc, char **args);
 grub_err_t ventoy_cmd_trailer_cpio(grub_extcmd_context_t ctxt, int argc, char **args);
 int ventoy_cpio_newc_fill_head(void *buf, int filesize, const void *filedata, const char *name);
@@ -508,6 +518,7 @@ grub_err_t ventoy_cmd_load_plugin(grub_extcmd_context_t ctxt, int argc, char **a
 grub_err_t ventoy_cmd_wimdows_reset(grub_extcmd_context_t ctxt, int argc, char **args);
 grub_err_t ventoy_cmd_windows_chain_data(grub_extcmd_context_t ctxt, int argc, char **args);
 grub_err_t ventoy_cmd_wim_chain_data(grub_extcmd_context_t ctxt, int argc, char **args);
+grub_err_t ventoy_cmd_wim_check_bootable(grub_extcmd_context_t ctxt, int argc, char **args);
 grub_err_t ventoy_cmd_dump_wim_patch(grub_extcmd_context_t ctxt, int argc, char **args);
 
 VTOY_JSON *vtoy_json_find_item
@@ -731,6 +742,24 @@ typedef struct install_template
     struct install_template *next;
 }install_template;
 
+typedef struct dudfile
+{
+    int size;
+    char *buf;
+}dudfile;
+
+typedef struct dud
+{
+    int pathlen;
+    char isopath[256];
+
+    int dudnum;
+    file_fullpath *dudpath;
+    dudfile *files;
+
+    struct dud *next;
+}dud;
+
 typedef struct persistence_config
 {
     int pathlen;
@@ -806,6 +835,29 @@ typedef struct image_list
     struct image_list *next;
 }image_list;
 
+#define VTOY_PASSWORD_NONE       0
+#define VTOY_PASSWORD_TXT        1
+#define VTOY_PASSWORD_MD5        2
+#define VTOY_PASSWORD_SALT_MD5   3
+
+typedef struct vtoy_password
+{
+    int type;
+    char text[128];
+    char salt[64];
+    grub_uint8_t md5[16];
+}vtoy_password;
+
+typedef struct menu_password
+{
+    int pathlen;
+    char isopath[256];
+
+    vtoy_password password;
+
+    struct menu_password *next;
+}menu_password;
+
 extern int g_ventoy_menu_esc;
 extern int g_ventoy_suppress_esc;
 extern int g_ventoy_last_entry;
@@ -818,6 +870,7 @@ extern int g_vhdboot_enable;
 extern int g_plugin_image_list;
 extern ventoy_gpt_info *g_ventoy_part_info;
 extern grub_uint64_t g_conf_replace_offset;
+extern grub_uint64_t g_svd_replace_offset;
 extern conf_replace *g_conf_replace_node;
 extern grub_uint8_t *g_conf_replace_new_buf;
 extern int g_conf_replace_new_len;
@@ -855,10 +908,13 @@ const char * ventoy_plugin_get_menu_class(int type, const char *name);
 int ventoy_plugin_check_memdisk(const char *isopath);
 int ventoy_plugin_get_image_list_index(int type, const char *name);
 conf_replace * ventoy_plugin_find_conf_replace(const char *iso);
+dud * ventoy_plugin_find_dud(const char *iso);
+int ventoy_plugin_load_dud(dud *node, const char *isopart);
 int ventoy_get_block_list(grub_file_t file, ventoy_img_chunk_list *chunklist, grub_disk_addr_t start);
 int ventoy_check_block_list(grub_file_t file, ventoy_img_chunk_list *chunklist, grub_disk_addr_t start);
 void ventoy_plugin_dump_persistence(void);
 grub_err_t ventoy_cmd_plugin_check_json(grub_extcmd_context_t ctxt, int argc, char **args);
+grub_err_t ventoy_cmd_check_password(grub_extcmd_context_t ctxt, int argc, char **args);
 grub_err_t ventoy_cmd_linux_get_main_initrd_index(grub_extcmd_context_t ctxt, int argc, char **args);
 grub_err_t ventoy_cmd_collect_wim_patch(grub_extcmd_context_t ctxt, int argc, char **args);
 grub_err_t ventoy_cmd_wim_patch_count(grub_extcmd_context_t ctxt, int argc, char **args);
@@ -877,6 +933,7 @@ grub_err_t ventoy_cmd_load_vhdboot(grub_extcmd_context_t ctxt, int argc, char **
 grub_err_t ventoy_cmd_patch_vhdboot(grub_extcmd_context_t ctxt, int argc, char **args);
 grub_err_t ventoy_cmd_raw_chain_data(grub_extcmd_context_t ctxt, int argc, char **args);
 grub_err_t ventoy_cmd_get_vtoy_type(grub_extcmd_context_t ctxt, int argc, char **args);
+int ventoy_check_password(const vtoy_password *pwd, int retry);
 
 #endif /* __VENTOY_DEF_H__ */
 
