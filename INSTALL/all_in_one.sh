@@ -3,7 +3,10 @@
 VTOY_PATH=$PWD/..
 
 cd $VTOY_PATH/DOC
-sh installdietlibc.sh
+sh prepare_env.sh
+
+export PATH=$PATH:/opt/gcc-linaro-7.4.1-2019.02-x86_64_aarch64-linux-gnu/bin:/opt/aarch64--uclibc--stable-2020.08-1/bin
+
 
 cd $VTOY_PATH/GRUB2
 sh buildgrub.sh || exit 1
@@ -14,24 +17,29 @@ sh buildipxe.sh || exit 1
 cd $VTOY_PATH/EDK2
 sh buildedk.sh || exit 1
 
-cd $VTOY_PATH/VtoyTool
-sh build.sh || exit 1
-
-cd $VTOY_PATH/vtoyfat/fat_io_lib
-sh buildlib.sh
-
-cd $VTOY_PATH/vtoyfat
-sh build.sh || exit 1
-
-cd $VTOY_PATH/vtoygpt
-sh build.sh || exit 1
-
-cd $VTOY_PATH/FUSEISO
-sh build_libfuse.sh
-sh build.sh
 
 
+#
 # We almost rarely modifiy these code, so no need to build them everytime
+# If you want to rebuild them, just uncomment them.
+#
+
+#cd $VTOY_PATH/VtoyTool
+#sh build.sh || exit 1
+
+#cd $VTOY_PATH/vtoyfat/fat_io_lib
+#sh buildlib.sh
+
+#cd $VTOY_PATH/vtoyfat
+#sh build.sh || exit 1
+
+#cd $VTOY_PATH/vtoygpt
+#sh build.sh || exit 1
+
+#cd $VTOY_PATH/FUSEISO
+#sh build_libfuse.sh
+#sh build.sh
+
 
 # cd $VTOY_PATH/ExFAT
 # sh buidlibfuse.sh || exit 1
@@ -53,6 +61,12 @@ sh build.sh
 # sh build.sh
 
 cd $VTOY_PATH/INSTALL
-sh ventoy_pack.sh || exit 1
+
+if [ "$1" = "CI" ]; then
+    Ver=$(date +%m%d%H%M)
+    sed "s/VENTOY_VERSION=.*/VENTOY_VERSION=\"$Ver\"/"  -i ./grub/grub.cfg
+fi
+
+sh ventoy_pack.sh $1 || exit 1
 
 echo -e '\n============== SUCCESS ==================\n'

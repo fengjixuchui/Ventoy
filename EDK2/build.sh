@@ -33,12 +33,11 @@ rm -f $DST_PATH
 rm -f $VTEFI_PATH2
 rm -f $DST_PATH2
 rm -f $VTEFI_PATH3
-rm -f $DST_PATH3
+[ -d ../../VDiskChain ] && rm -f $DST_PATH3
 
 source ./edksetup.sh
 
 if [ "$EDKARCH" = "AARCH64" ]; then    
-    PATH=$PATH:/opt/gcc-linaro-7.4.1-2019.02-x86_64_aarch64-linux-gnu/bin \
     GCC48_AARCH64_PREFIX=aarch64-linux-gnu- \
     build -p MdeModulePkg/MdeModulePkg.dsc -a $EDKARCH -b RELEASE -t GCC48
 else
@@ -49,7 +48,7 @@ if [ -e $VTEFI_PATH ] && [ -e $VTEFI_PATH2 ] && [ -e $VTEFI_PATH3 ]; then
     echo -e '\n\n====================== SUCCESS ========================\n\n'    
     cp -a $VTEFI_PATH $DST_PATH
     cp -a $VTEFI_PATH2 $DST_PATH2
-    cp -a $VTEFI_PATH3 $DST_PATH3
+    [ -d ../../VDiskChain ] && cp -a $VTEFI_PATH3 $DST_PATH3
     cd ..
 else
     echo -e '\n\n====================== FAILED ========================\n\n'
