@@ -12,10 +12,12 @@ if [ -f ./ventoy/version ]; then
     curver=$(cat ./ventoy/version) 
 fi
 
-if uname -a | egrep -q 'aarch64|arm64'; then
+if uname -m | egrep -q 'aarch64|arm64'; then
     export TOOLDIR=aarch64
-elif uname -a | egrep -q 'x86_64|amd64'; then
+elif uname -m | egrep -q 'x86_64|amd64'; then
     export TOOLDIR=x86_64
+elif uname -m | egrep -q 'mips64'; then
+    export TOOLDIR=mips64el
 else
     export TOOLDIR=i386
 fi

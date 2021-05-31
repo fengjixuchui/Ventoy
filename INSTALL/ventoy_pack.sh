@@ -8,6 +8,8 @@ fi
 
 dos2unix -q ./tool/ventoy_lib.sh
 dos2unix -q ./tool/VentoyWorker.sh
+dos2unix -q ./tool/WebDeepin.sh
+dos2unix -q ./tool/WebUos.sh
 
 . ./tool/ventoy_lib.sh
 
@@ -23,6 +25,15 @@ fi
 cd ../IMG
 sh mkcpio.sh
 sh mkloopex.sh
+cd -
+
+cd ../Unix
+sh pack_unix.sh
+cd -
+
+cd ../LinuxGUI
+sh language.sh || exit 1
+sh build.sh
 cd -
 
 
@@ -71,6 +82,7 @@ cp $OPT ./tool/i386/mount.exfat-fuse     $tmpmnt/tool/mount.exfat-fuse_i386
 cp $OPT ./tool/x86_64/mount.exfat-fuse   $tmpmnt/tool/mount.exfat-fuse_x86_64
 cp $OPT ./tool/aarch64/mount.exfat-fuse  $tmpmnt/tool/mount.exfat-fuse_aarch64
 
+
 rm -f $tmpmnt/grub/i386-pc/*.img
 
 
@@ -88,11 +100,22 @@ xz --check=crc32 $tmpdir/boot/core.img
 cp $OPT ./tool $tmpdir/
 rm -f $tmpdir/ENROLL_THIS_KEY_IN_MOKMANAGER.cer
 cp $OPT Ventoy2Disk.sh $tmpdir/
+cp $OPT VentoyWeb.sh $tmpdir/
+cp $OPT VentoyWebDeepin.sh $tmpdir/
+#cp $OPT Ventoy.desktop $tmpdir/
 cp $OPT README $tmpdir/
 cp $OPT plugin $tmpdir/
 cp $OPT CreatePersistentImg.sh $tmpdir/
+cp $OPT ExtendPersistentImg.sh $tmpdir/
 dos2unix -q $tmpdir/Ventoy2Disk.sh
+dos2unix -q $tmpdir/VentoyWeb.sh
+dos2unix -q $tmpdir/VentoyWebDeepin.sh
+#dos2unix -q $tmpdir/Ventoy.desktop
 dos2unix -q $tmpdir/CreatePersistentImg.sh
+dos2unix -q $tmpdir/ExtendPersistentImg.sh
+
+cp $OPT ../LinuxGUI/WebUI $tmpdir/
+sed 's/.*SCRIPT_DEL_THIS \(.*\)/\1/g' -i $tmpdir/WebUI/index.html
 
 #32MB disk img
 dd status=none if=$LOOP of=$tmpdir/ventoy/ventoy.disk.img bs=512 count=$VENTOY_SECTOR_NUM skip=$part2_start_sector
@@ -119,6 +142,9 @@ done
 find $tmpdir/ -type d -exec chmod 755 "{}" +
 find $tmpdir/ -type f -exec chmod 644 "{}" +
 chmod +x $tmpdir/Ventoy2Disk.sh
+chmod +x $tmpdir/VentoyWeb.sh
+chmod +x $tmpdir/VentoyWebDeepin.sh
+#chmod +x $tmpdir/Ventoy.desktop
 chmod +x $tmpdir/CreatePersistentImg.sh
 
 tar -czvf ventoy-${curver}-linux.tar.gz $tmpdir
@@ -127,9 +153,10 @@ tar -czvf ventoy-${curver}-linux.tar.gz $tmpdir
 
 rm -f ventoy-${curver}-windows.zip
 cp $OPT Ventoy2Disk*.exe $tmpdir/
-cp $OPT $LANG_DIR/languages.ini $tmpdir/ventoy/
+cp $OPT $LANG_DIR/languages.json $tmpdir/ventoy/
 rm -rf $tmpdir/tool
 rm -f $tmpdir/*.sh
+rm -rf $tmpdir/WebUI
 rm -f $tmpdir/README
 
 
@@ -137,12 +164,8 @@ zip -r ventoy-${curver}-windows.zip $tmpdir/
 
 rm -rf $tmpdir
 
-cd ../LiveCD
-if [ "$1" = "CI" ]; then
-    echo "=============== run docker_ci.sh ==============="
-    sh docker_ci.sh $1
-fi
 echo "=============== run livecd.sh ==============="
+cd ../LiveCD
 sh livecd.sh $1
 cd $CurDir
 

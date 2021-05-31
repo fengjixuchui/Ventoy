@@ -21,9 +21,9 @@ if ! [ -e $VENTOY_PATH/INSTALL/ventoy-${version}-linux.tar.gz ]; then
 fi
 
 rm -rf ISO_TMP
-cp $OPT ISO ISO_TMP
+cp -a ISO ISO_TMP
 
-cp $OPT VTOY VTOY_TMP 
+cp -a VTOY VTOY_TMP 
 
 ls -la
 if ! [ -d ISO_TMP ]; then
@@ -39,15 +39,18 @@ fi
 mkdir -p ISO_TMP/EFI/ventoy
 cd VTOY_TMP
 
-gcc -O2 -m32 ./ventoy/disksize.c -o ./ventoy/disksize
+gcc -O2 ./ventoy/disksize.c -o ./ventoy/disksize
+
 rm -f ./ventoy/disksize.c
+
+chmod +x ./ventoy/*.sh
 find . | cpio  -o -H newc | gzip -c -9 > ../ISO_TMP/EFI/ventoy/ventoy.gz
 cd .. && rm -rf VTOY_TMP
 
 
-cp $OPT $VENTOY_PATH/INSTALL/ventoy-${version}-linux.tar.gz ISO_TMP/EFI/ventoy/
-cp $OPT GRUB/cdrom.img ISO_TMP/EFI/boot/
-cp $OPT GRUB/bootx64.efi ISO_TMP/EFI/boot/
+cp -a $VENTOY_PATH/INSTALL/ventoy-${version}-linux.tar.gz ISO_TMP/EFI/ventoy/
+cp -a GRUB/cdrom.img ISO_TMP/EFI/boot/
+cp -a GRUB/bootx64.efi ISO_TMP/EFI/boot/
 
 
 rm -rf efimnt
@@ -62,7 +65,7 @@ cp $OPT GRUB/bootx64.efi efimnt/EFI/boot/
 umount efimnt
 
 sync
-cp $OPT efi.img ISO_TMP/EFI/boot/
+cp -a efi.img ISO_TMP/EFI/boot/
 
 rm -rf efimnt
 rm -f efi.img

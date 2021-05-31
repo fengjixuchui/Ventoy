@@ -6,9 +6,9 @@ print_usage() {
     
     echo 'Usage:  Ventoy2Disk.sh CMD [ OPTION ] /dev/sdX'
     echo '  CMD:'
-    echo '   -i  install ventoy to sdX (fail if disk already installed with ventoy)'
-    echo '   -I  force install ventoy to sdX (no matter installed or not)'
-    echo '   -u  update ventoy in sdX'
+    echo '   -i  install Ventoy to sdX (fails if disk already installed with Ventoy)'
+    echo '   -I  force install Ventoy to sdX (no matter installed or not)'
+    echo '   -u  update Ventoy in sdX'
     echo '   -l  list Ventoy information in sdX'
     echo ''
     echo '  OPTION: (optional)'
@@ -75,8 +75,8 @@ fi
 if [ -e /sys/class/block/${DISK#/dev/}/start ]; then
     vterr  "$DISK is a partition, please use the whole disk."
     echo   "For example:"
-    vterr  "    sudo sh Ventoy2Disk.sh -i /dev/sdX1 <=== This is wrong"
-    vtinfo "    sudo sh Ventoy2Disk.sh -i /dev/sdX  <=== This is right"
+    vterr  "    sudo sh Ventoy2Disk.sh -i /dev/sdb1 <=== This is wrong"
+    vtinfo "    sudo sh Ventoy2Disk.sh -i /dev/sdb  <=== This is right"
     echo ""
     exit 1
 fi
@@ -90,22 +90,13 @@ if [ -n "$RESERVE_SPACE" -a "$MODE" = "install" ]; then
     fi
 fi
 
-#check access 
-if dd if="$DISK" of=/dev/null bs=1 count=1 >/dev/null 2>&1; then
-    vtdebug "root permission check ok ..."
-else
-    vterr "Failed to access $DISK, maybe root privilege is needed!"
-    echo ''
-    exit 1
-fi
-
 vtdebug "MODE=$MODE FORCE=$FORCE RESERVE_SPACE=$RESERVE_SPACE RESERVE_SIZE_MB=$RESERVE_SIZE_MB"
 
 #check tools
 if check_tool_work_ok; then
     vtdebug "check tool work ok"
 else
-    vterr "Some tools can not run in current system. Please check log.txt for detail."
+    vterr "Some tools can not run on current system. Please check log.txt for details."
     exit 1
 fi
 
@@ -134,11 +125,7 @@ if [ "$MODE" = "list" ]; then
 fi
 
 #check mountpoint
-grep "^$DISK" /proc/mounts | while read mtline; do
-    mtpnt=$(echo $mtline | awk '{print $2}')
-    vtdebug "Trying to umount $mtpnt ..."
-    umount $mtpnt >/dev/null 2>&1
-done
+check_umount_disk "$DISK"
 
 if grep "$DISK" /proc/mounts; then
     vterr "$DISK is already mounted, please umount it first!"
@@ -153,20 +140,30 @@ if swapon --help 2>&1 | grep -q '^ \-s,'; then
     fi
 fi
 
+#check access 
+if dd if="$DISK" of=/dev/null bs=1 count=1 >/dev/null 2>&1; then
+    vtdebug "root permission check ok ..."
+else
+    vterr "Failed to access $DISK, maybe root privilege is needed!"
+    echo ''
+    exit 1
+fi
+
+
 #check tmp_mnt directory
 if [ -d ./tmp_mnt ]; then
     vtdebug "There is a tmp_mnt directory, now delete it."
     umount ./tmp_mnt >/dev/null 2>&1
     rm -rf ./tmp_mnt
     if [ -d ./tmp_mnt ]; then
-        vterr "tmp_mnt directory exit, please delete it first."
+        vterr "tmp_mnt directory exits, please delete it first."
         exit 1
     fi
 fi
 
 
 if [ "$MODE" = "install" ]; then
-    vtdebug "install ventoy ..."
+    vtdebug "install Ventoy ..."
 
     if [ -n "$VTGPT" ]; then
         if parted -v > /dev/null 2>&1; then
@@ -192,7 +189,7 @@ if [ "$MODE" = "install" ]; then
         if [ -z "$FORCE" ]; then
             vtwarn "$DISK already contains a Ventoy with version $version"
             vtwarn "Use -u option to do a safe upgrade operation."
-            vtwarn "OR if you really want to reinstall ventoy to $DISK, please use -I option."
+            vtwarn "OR if you really want to reinstall Ventoy to $DISK, please use -I option."
             vtwarn ""
             exit 1
         fi
@@ -298,6 +295,9 @@ if [ "$MODE" = "install" ]; then
         xzcat ./boot/core.img.xz | dd status=none conv=fsync of=$DISK bs=512 count=2047 seek=1
     fi
     
+    # check and umount
+    check_umount_disk "$DISK"
+    
     xzcat ./ventoy/ventoy.disk.img.xz | dd status=none conv=fsync of=$DISK bs=512 count=$VENTOY_SECTOR_NUM seek=$part2_start_sector
     
     #test UUID
@@ -316,10 +316,7 @@ if [ "$MODE" = "install" ]; then
     vtinfo "esp partition processing ..."
     
     sleep 1
-    mtpnt=$(grep "^${PART2}" /proc/mounts | awk '{print $2}')
-    if [ -n "$mtpnt" ]; then
-        umount $mtpnt >/dev/null 2>&1
-    fi
+    check_umount_disk "$DISK"    
     
     if [ "$SECUREBOOT" != "YES" ]; then        
         mkdir ./tmp_mnt
@@ -331,10 +328,7 @@ if [ "$MODE" = "install" ]; then
                 break
             fi
             
-            mtpnt=$(grep "^${PART2}" /proc/mounts | awk '{print $2}')
-            if [ -n "$mtpnt" ]; then
-                umount $mtpnt >/dev/null 2>&1
-            fi    
+            check_umount_disk "$DISK"            
             sleep 2
         done
         
@@ -347,6 +341,8 @@ if [ "$MODE" = "install" ]; then
         rm -f ./tmp_mnt/ENROLL_THIS_KEY_IN_MOKMANAGER.cer
         mv ./tmp_mnt/EFI/BOOT/grubx64_real.efi  ./tmp_mnt/EFI/BOOT/BOOTX64.EFI
         mv ./tmp_mnt/EFI/BOOT/grubia32_real.efi  ./tmp_mnt/EFI/BOOT/BOOTIA32.EFI
+        
+        sync
         
         for tt in 1 2 3; do
             if umount ./tmp_mnt; then
@@ -365,15 +361,19 @@ if [ "$MODE" = "install" ]; then
     echo ""
     
 else
-    vtdebug "update ventoy ..."
+    vtdebug "update Ventoy ..."
     
     oldver=$(get_disk_ventoy_version $DISK)
     if [ $? -ne 0 ]; then
-        vtwarn "$DISK does not contain ventoy or data corupted"
-        echo ""
-        vtwarn "Please use -i option if you want to install ventoy to $DISK"
-        echo ""
-        exit 1
+        if is_disk_contains_ventoy $DISK; then
+            oldver="Unknown"
+        else
+            vtwarn "$DISK does not contain Ventoy or data corrupted"
+            echo ""
+            vtwarn "Please use -i option if you want to install ventoy to $DISK"
+            echo ""
+            exit 1
+        fi
     fi
 
     #reserve secure boot option
@@ -438,15 +438,19 @@ else
     dd status=none conv=fsync if=./rsvdata.bin seek=2040 bs=512 count=8 of=${DISK}
     rm -f ./rsvdata.bin
 
+    check_umount_disk "$DISK"
+    
     xzcat ./ventoy/ventoy.disk.img.xz | dd status=none conv=fsync of=$DISK bs=512 count=$VENTOY_SECTOR_NUM seek=$part2_start
 
     sync
-    
+
     if [ "$SECUREBOOT" != "YES" ]; then
         mkdir ./tmp_mnt
         
         vtdebug "mounting part2 ...."        
-        for tt in 1 2 3 4 5; do            
+        for tt in 1 2 3 4 5; do
+            check_umount_disk "$DISK"
+
             if mount ${PART2} ./tmp_mnt > /dev/null 2>&1; then
                 vtdebug "mounting part2 success"
                 break
@@ -466,6 +470,7 @@ else
         mv ./tmp_mnt/EFI/BOOT/grubx64_real.efi  ./tmp_mnt/EFI/BOOT/BOOTX64.EFI
         mv ./tmp_mnt/EFI/BOOT/grubia32_real.efi  ./tmp_mnt/EFI/BOOT/BOOTIA32.EFI
         
+        sync
         
         for tt in 1 2 3; do
             if umount ./tmp_mnt > /dev/null 2>&1; then
@@ -480,7 +485,7 @@ else
     fi
 
     echo ""
-    vtinfo "Update Ventoy to $DISK successfully finished."
+    vtinfo "Update Ventoy on $DISK successfully finished."
     echo ""
     
 fi

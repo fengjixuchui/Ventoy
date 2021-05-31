@@ -32,6 +32,7 @@
 *save_env: loadenv
 *search: search
 *serial: serial
+*set_keyboard_layout: setkey
 *setkey: setkey
 *sha1sum: hashsum
 *sha256sum: hashsum
@@ -77,7 +78,9 @@ gptsync: gptsync
 halt: halt
 help: minicmd
 initrd: linux
+initrdefi: linux
 linux: linux
+linuxefi: linux
 list_trusted: pgp
 loadfont: font
 lsefi: lsefi
@@ -127,6 +130,10 @@ time: time
 true: true
 videoinfo: videoinfo
 videotest: videotest
+vt_img_extra_initrd_append: linux
+vt_img_extra_initrd_reset: linux
+vt_set_boot_opt: linux
+vt_unset_boot_opt: linux
 write_byte: memrw
 write_dword: memrw
 write_word: memrw

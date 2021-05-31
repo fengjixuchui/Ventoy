@@ -37,11 +37,13 @@
 #include <Ventoy.h>
 
 BOOLEAN gDebugPrint = FALSE;
+BOOLEAN gBootFallBack = FALSE;
 BOOLEAN gDotEfiBoot = FALSE;
 BOOLEAN gLoadIsoEfi = FALSE;
 BOOLEAN gIsoUdf = FALSE;
 ventoy_ram_disk g_ramdisk_param;
 ventoy_chain_head *g_chain;
+void *g_vtoy_img_location_buf;
 ventoy_img_chunk *g_chunk;
 UINT8 *g_os_param_reserved;
 UINT32 g_img_chunk_num;
@@ -269,6 +271,7 @@ static int ventoy_update_image_location(ventoy_os_param *param)
     }
 
     address = (UINTN)buffer;
+    g_vtoy_img_location_buf = buffer;
 
     if (address % 4096)
     {
@@ -694,6 +697,11 @@ STATIC EFI_STATUS EFIAPI ventoy_parse_cmdline(IN EFI_HANDLE ImageHandle)
         gDebugPrint = TRUE;
     }
     
+    if (StrStr(pCmdLine, L"fallback"))
+    {
+        gBootFallBack = TRUE;
+    }
+    
     if (StrStr(pCmdLine, L"dotefi"))
     {
         gDotEfiBoot = TRUE;
@@ -873,12 +881,15 @@ EFI_STATUS EFIAPI ventoy_clean_env(VOID)
 
     ventoy_delete_variable();
 
-    if (g_chain->os_param.vtoy_img_location_addr)
+    if (g_vtoy_img_location_buf)
     {
-        FreePool((VOID *)(UINTN)g_chain->os_param.vtoy_img_location_addr);
+        FreePool(g_vtoy_img_location_buf);
     }
 
-    FreePool(g_chain);
+    if (!gMemdiskMode)
+    {
+        FreePool(g_chain);        
+    }
 
     return EFI_SUCCESS;
 }
@@ -1030,7 +1041,7 @@ EFI_STATUS EFIAPI ventoy_boot(IN EFI_HANDLE ImageHandle)
             }
         
             debug("Fs not found, now wait and retry...");
-            sleep(2);
+            sleep(1);
         }
     }
 
@@ -1130,7 +1141,7 @@ EFI_STATUS EFIAPI VentoyEfiMain
         ventoy_clean_env();
     }
 
-    if (FALSE == gDotEfiBoot)
+    if (FALSE == gDotEfiBoot && FALSE == gBootFallBack)
     {
         if (EFI_NOT_FOUND == Status)
         {

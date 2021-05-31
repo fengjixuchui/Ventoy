@@ -37,11 +37,14 @@
 int g_ventoy_menu_refresh = 0;
 int g_ventoy_memdisk_mode = 0;
 int g_ventoy_iso_raw = 0;
+int g_ventoy_grub2_mode = 0;
+int g_ventoy_wimboot_mode = 0;
 int g_ventoy_iso_uefi_drv = 0;
 int g_ventoy_last_entry = -1;
 int g_ventoy_suppress_esc = 0;
 int g_ventoy_menu_esc = 0;
 int g_ventoy_fn_mutex = 0;
+int g_ventoy_terminal_output = 0;
 
 /* Time to delay after displaying an error message about a default/fallback
    entry failing to boot.  */
@@ -871,15 +874,18 @@ run_menu (grub_menu_t menu, int nested, int *auto_boot)
             }
             break;
         case GRUB_TERM_KEY_F7:
-        case '7':
-            cmdstr = grub_env_get("VTOY_F7_CMD");
-            if (cmdstr)
+            menu_fini ();
+            if (g_ventoy_terminal_output == 0)
             {
-                menu_fini ();
-                grub_script_execute_sourcecode(cmdstr);
-                goto refresh;
+                grub_script_execute_sourcecode("terminal_output console");
+                g_ventoy_terminal_output = 1;
             }
-            break;
+            else
+            {
+                grub_script_execute_sourcecode("terminal_output gfxterm");
+                g_ventoy_terminal_output = 0;
+            }
+            goto refresh;
         case GRUB_TERM_KEY_F1:
         case '1':
             menu_fini ();
@@ -890,6 +896,18 @@ run_menu (grub_menu_t menu, int nested, int *auto_boot)
         case (GRUB_TERM_CTRL | 'i'):
             menu_fini ();
             g_ventoy_iso_raw = 1 - g_ventoy_iso_raw;
+            g_ventoy_menu_refresh = 1;
+            goto refresh;
+            
+        case (GRUB_TERM_CTRL | 'r'):
+            menu_fini ();
+            g_ventoy_grub2_mode = 1 - g_ventoy_grub2_mode;
+            g_ventoy_menu_refresh = 1;
+            goto refresh;
+            
+        case (GRUB_TERM_CTRL | 'w'):
+            menu_fini ();
+            g_ventoy_wimboot_mode = 1 - g_ventoy_wimboot_mode;
             g_ventoy_menu_refresh = 1;
             goto refresh;
             
